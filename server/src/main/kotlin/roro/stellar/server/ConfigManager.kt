@@ -23,7 +23,13 @@ import roro.stellar.server.util.UserHandleCompat
 
 class ConfigManager {
 
-    private val mWriteRunner: Runnable = Runnable { saveToManager(config) }
+    // Serialize under the same monitor as permission updates, then perform Binder I/O
+    // outside the lock. Otherwise a writer may race with map mutations.
+    private val mWriteRunner: Runnable = Runnable {
+        val json = synchronized(this) { GSON_OUT.toJson(config) }
+        saveJsonToManager(json)
+    }
+    private var initializing = true
 
     private val config: StellarConfig
     private val configLoadedFromManager: Boolean
@@ -62,6 +68,7 @@ class ConfigManager {
             entry.value.packages.addAll(s)
             val shrunkSize = entry.value.packages.size
             if (shrunkSize < rawSize) {
+                changed = true
                 LOGGER.w("entry.packages has duplicate! Shrunk. (%d -> %d)", rawSize, shrunkSize)
             }
 
@@ -98,8 +105,7 @@ class ConfigManager {
                 val packages = ArrayList<String>()
                 packages.add(pi.packageName)
 
-                updateLocked(uid, packages)
-                changed = true
+                if (updateLocked(uid, packages)) changed = true
             }
         }
 
@@ -148,12 +154,15 @@ class ConfigManager {
             }
         }
 
+        initializing = false
         if (changed && configLoadedFromManager) {
             scheduleWriteLocked()
         }
     }
 
     private fun scheduleWriteLocked() {
+        // A failed initial read must never be overwritten with defaults.
+        if (initializing) return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (workerHandler.hasCallbacks(mWriteRunner)) {
                 return
@@ -242,22 +251,25 @@ class ConfigManager {
     private fun updateLocked(
         uid: Int,
         packages: MutableList<String>?
-    ) {
+    ): Boolean {
         var entry = findLocked(uid)
+        var changed = false
         if (entry == null) {
             entry = PackageEntry()
             entry.permissions[PERMISSION_STELLAR] = FLAG_ASK
             config.packages[uid] = entry
+            changed = true
         }
         if (packages != null) {
             for (packageName in packages) {
-                if (entry.packages.contains(packageName)) {
-                    continue
+                if (!entry.packages.contains(packageName)) {
+                    entry.packages.add(packageName)
+                    changed = true
                 }
-                entry.packages.add(packageName)
             }
         }
-        scheduleWriteLocked()
+        if (changed) scheduleWriteLocked()
+        return changed
     }
 
     fun update(
@@ -401,8 +413,11 @@ class ConfigManager {
         }
 
         fun saveToManager(config: StellarConfig) {
+            saveJsonToManager(GSON_OUT.toJson(config))
+        }
+
+        private fun saveJsonToManager(json: String) {
             try {
-                val json = GSON_OUT.toJson(config)
                 val extras = Bundle().apply { putString("configJson", json) }
                 val result = callProvider("saveConfig", extras)
                 if (result != null) {
