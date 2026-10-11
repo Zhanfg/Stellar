@@ -3,7 +3,7 @@ package roro.stellar.server.grant
 import android.Manifest
 import android.content.pm.PackageManager
 import android.provider.Settings
-import rikka.hidden.compat.PermissionManagerApis
+import roro.stellar.server.util.PermissionManagerCompat
 import roro.stellar.server.ServerConstants.MANAGER_APPLICATION_ID
 import roro.stellar.server.util.Logger
 
@@ -12,7 +12,7 @@ object ManagerGrantHelper {
 
     fun grantWriteSecureSettings(managerAppId: Int) {
         try {
-            val pm = PermissionManagerApis.checkPermission(
+            val pm = PermissionManagerCompat.checkUidPermission(
                 Manifest.permission.WRITE_SECURE_SETTINGS,
                 managerAppId
             )
