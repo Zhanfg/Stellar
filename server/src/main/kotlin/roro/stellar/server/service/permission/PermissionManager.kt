@@ -2,7 +2,7 @@ package roro.stellar.server.service.permission
 
 import android.os.Bundle
 import rikka.hidden.compat.ActivityManagerApis
-import rikka.hidden.compat.PermissionManagerApis
+import roro.stellar.server.util.PermissionManagerCompat
 import roro.stellar.StellarApiConstants
 import roro.stellar.server.ClientManager
 import roro.stellar.server.ConfigManager
@@ -62,15 +62,15 @@ class PermissionManager(
 
     fun grantRuntimePermission(packageName: String, permissionName: String, userId: Int) {
         try {
-            PermissionManagerApis.grantRuntimePermission(packageName, permissionName, userId)
-        } catch (e: Exception) {
+            PermissionManagerCompat.grantRuntimePermission(packageName, permissionName, userId)
+        } catch (e: Throwable) {
             throw RuntimeException("授予权限失败: ${e.message}", e)
         }
     }
 
     fun revokeRuntimePermission(packageName: String, permissionName: String, userId: Int) {
         try {
-            PermissionManagerApis.revokeRuntimePermission(packageName, permissionName, userId)
+            PermissionManagerCompat.revokeRuntimePermission(packageName, permissionName, userId)
         } catch (e: Exception) {
             throw RuntimeException("撤销权限失败: ${e.message}", e)
         }
