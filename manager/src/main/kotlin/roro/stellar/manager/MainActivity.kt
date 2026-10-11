@@ -1,7 +1,6 @@
 package roro.stellar.manager
 
 import android.content.Intent
-import android.content.res.Configuration
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -236,7 +235,8 @@ private fun MainScreenContent(
     val context = navController.context
 
     val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    // A landscape phone may still be compact; the rail requires a wide window.
+    val useNavigationRail = configuration.screenWidthDp >= 600
 
     BackHandler {
         if (navController.previousBackStackEntry == null) {
@@ -336,7 +336,7 @@ private fun MainScreenContent(
 
     CompositionLocalProvider(LocalNavigationState provides navigationState) {
         AdaptiveLayoutProvider {
-            if (isLandscape) {
+            if (useNavigationRail) {
                 Row(modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.surface)
