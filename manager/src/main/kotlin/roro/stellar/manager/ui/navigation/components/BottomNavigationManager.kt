@@ -5,8 +5,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.ShortNavigationBar
+import androidx.compose.material3.ShortNavigationBarItem
+import androidx.compose.material3.NavigationItemIconPosition
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Text
@@ -22,11 +23,12 @@ fun StandardBottomNavigation(
     selectedIndex: Int,
     onItemClick: (Int) -> Unit
 ) {
-    NavigationBar {
+    // Official Material 3 Expressive short navigation with selected pill indicator.
+    ShortNavigationBar {
         MainScreen.entries.forEachIndexed { index, screen ->
             val isSelected = selectedIndex == index
 
-            NavigationBarItem(
+            ShortNavigationBarItem(
                 icon = {
                     Icon(
                         imageVector = if (isSelected) screen.iconFilled else screen.icon,
@@ -38,6 +40,7 @@ fun StandardBottomNavigation(
                     Text(text = stringResource(screen.labelRes))
                 },
                 selected = isSelected,
+                iconPosition = NavigationItemIconPosition.Top,
                 onClick = { onItemClick(index) }
             )
         }
