@@ -2,7 +2,8 @@ package roro.stellar.manager.ui.navigation.components
 
 import android.content.res.Configuration
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.LargeTopAppBar
+import androidx.compose.material3.LargeFlexibleTopAppBar
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
@@ -36,7 +37,7 @@ fun createTopAppBarScrollBehavior(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun StandardLargeTopAppBar(
     modifier: Modifier = Modifier,
@@ -58,7 +59,8 @@ fun StandardLargeTopAppBar(
         TopAppBarDefaults.largeTopAppBarColors()
     }
 
-    LargeTopAppBar(
+    // Material 3 Expressive flexible app bar; title responds to content scroll.
+    LargeFlexibleTopAppBar(
         title = {
             if (titleContent != null) {
                 titleContent()
