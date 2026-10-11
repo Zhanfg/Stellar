@@ -54,7 +54,6 @@ fun HomeScreen(
     val isRunning = serviceStatus?.isRunning ?: false
     val isRoot = serviceStatus?.uid == 0
     val isPrimaryUser = UserHandleCompat.myUserId() == 0
-    val hasRoot = EnvironmentUtils.isRooted()
 
     var showPowerDialog by remember { mutableStateOf(false) }
     var showAdbCommandDialog by remember { mutableStateOf(false) }
@@ -103,13 +102,13 @@ fun HomeScreen(
             }
 
             if (isPrimaryUser) {
-                if (hasRoot) {
-                    item {
-                        StartRootCard(
-                            isRestart = isRunning && isRoot,
-                            onStartClick = { onNavigateToStarter(true, null, 0, false) }
-                        )
-                    }
+                // A root manager can provide su even if not present in PATH.
+                // Request and verify permission in the privileged launch flow.
+                item {
+                    StartRootCard(
+                        isRestart = isRunning && isRoot,
+                        onStartClick = { onNavigateToStarter(true, null, 0, false) }
+                    )
                 }
 
                 if (atLeast30 || EnvironmentUtils.getAdbTcpPort() > 0) {
@@ -126,16 +125,6 @@ fun HomeScreen(
                     )
                 }
 
-                if (!hasRoot) {
-                    item {
-                        StartRootCard(
-                            isRestart = isRunning && isRoot,
-                            onStartClick = {
-                                Toast.makeText(context, context.getString(R.string.no_root_permission), Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                    }
-                }
             }
         }
     }

@@ -58,6 +58,8 @@ fun StandardLargeTopAppBar(
         TopAppBarDefaults.largeTopAppBarColors()
     }
 
+    // Public Material 3 large app bar with scroll behavior; the expressive
+    // flexible variant is not exported by the currently pinned BOM.
     LargeTopAppBar(
         title = {
             if (titleContent != null) {

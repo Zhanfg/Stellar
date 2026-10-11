@@ -26,6 +26,14 @@ object PackageManagerCompat {
         runCatching { obtainPackageManagerService() }.getOrNull()
     }
 
+    // Android 17 commonly reaches these reflection fallbacks on every package query.
+    // Resolve the method once instead of scanning all proxy methods per application.
+    private val packageInfoMethod by lazy { findPackageManagerMethod("getPackageInfo", 3, 4) }
+    private val applicationInfoMethod by lazy { findPackageManagerMethod("getApplicationInfo", 3, 4) }
+    private val installedPackagesMethod by lazy {
+        packageManagerService?.let { findGetInstalledPackagesMethod(it) }
+    }
+
     fun getPackageInfo(packageName: String, flags: Long, userId: Int): PackageInfo? {
         return try {
             PackageManagerApis.getPackageInfoNoThrow(packageName, flags, userId)
@@ -56,7 +64,7 @@ object PackageManagerCompat {
 
         return try {
             val service = packageManagerService ?: return PackageManagerApis.getInstalledPackagesNoThrow(queryFlags, userId)
-            val method = findGetInstalledPackagesMethod(service)
+            val method = installedPackagesMethod
                 ?: return PackageManagerApis.getInstalledPackagesNoThrow(queryFlags, userId)
             val result = if (Build.VERSION.SDK_INT >= 33) {
                 invokeMethod(service, method, queryFlags, userId)
@@ -72,9 +80,13 @@ object PackageManagerCompat {
 
     private fun tryReflectPackageInfo(packageName: String, flags: Long, userId: Int): PackageInfo? {
         return try {
-            val methodHolder = findPackageManagerMethod("getPackageInfo", 3, 4)
-                ?: return null
-            invokeMethod(methodHolder.first, methodHolder.second, packageName, flags, userId) as? PackageInfo
+            val methodHolder = packageInfoMethod ?: return null
+            val compatibleFlags = if (methodHolder.second.parameterTypes[1] == Int::class.javaPrimitiveType) {
+                flags.toInt()
+            } else {
+                flags
+            }
+            invokeMethod(methodHolder.first, methodHolder.second, packageName, compatibleFlags, userId) as? PackageInfo
         } catch (tr: Throwable) {
             LOGGER.w(tr, "getPackageInfo fallback failed")
             null
@@ -83,9 +95,13 @@ object PackageManagerCompat {
 
     private fun tryReflectApplicationInfo(packageName: String, flags: Long, userId: Int): ApplicationInfo? {
         return try {
-            val methodHolder = findPackageManagerMethod("getApplicationInfo", 3, 4)
-                ?: return null
-            invokeMethod(methodHolder.first, methodHolder.second, packageName, flags, userId) as? ApplicationInfo
+            val methodHolder = applicationInfoMethod ?: return null
+            val compatibleFlags = if (methodHolder.second.parameterTypes[1] == Int::class.javaPrimitiveType) {
+                flags.toInt()
+            } else {
+                flags
+            }
+            invokeMethod(methodHolder.first, methodHolder.second, packageName, compatibleFlags, userId) as? ApplicationInfo
         } catch (tr: Throwable) {
             LOGGER.w(tr, "getApplicationInfo fallback failed")
             null
@@ -101,13 +117,21 @@ object PackageManagerCompat {
     }
 
     private fun findPackageManagerMethod(name: String, vararg parameterCounts: Int): Pair<Any, Method>? {
-        packageManagerService?.javaClass?.methods?.firstOrNull { method ->
-            method.name == name && parameterCounts.contains(method.parameterTypes.size)
-        }?.let { return packageManagerService!! to it }
+        fun compatible(method: Method): Boolean {
+            val p = method.parameterTypes
+            return method.name == name && parameterCounts.contains(p.size) &&
+                p[0] == String::class.java &&
+                p[1] in arrayOf(Int::class.javaPrimitiveType, Long::class.javaPrimitiveType) &&
+                p.drop(2).all { it == Int::class.javaPrimitiveType }
+        }
 
-        systemPackageManager.javaClass.methods.firstOrNull { method ->
-            method.name == name && parameterCounts.contains(method.parameterTypes.size)
-        }?.let { return systemPackageManager to it }
+        packageManagerService?.let { receiver ->
+            receiver.javaClass.methods.filter(::compatible)
+                .maxByOrNull { it.parameterTypes.size }?.let { return receiver to it }
+        }
+
+        systemPackageManager.javaClass.methods.filter(::compatible)
+            .maxByOrNull { it.parameterTypes.size }?.let { return systemPackageManager to it }
 
         return null
     }
@@ -118,12 +142,12 @@ object PackageManagerCompat {
         } else {
             Int::class.javaPrimitiveType
         }
-        return receiver.javaClass.methods.firstOrNull { method ->
+        return receiver.javaClass.methods.filter { method ->
             method.name == "getInstalledPackages" &&
-                    method.parameterTypes.size in 2..3 &&
-                    method.parameterTypes[0] == expectedFlagsType &&
-                    method.parameterTypes[1] == Int::class.javaPrimitiveType
-        }
+                method.parameterTypes.size in 2..3 &&
+                method.parameterTypes[0] == expectedFlagsType &&
+                method.parameterTypes.drop(1).all { it == Int::class.javaPrimitiveType }
+        }.maxByOrNull { it.parameterTypes.size }
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -146,7 +170,8 @@ object PackageManagerCompat {
 
     private fun invokeMethod(receiver: Any, method: Method, vararg args: Any?): Any? {
         val actualArgs: Array<out Any?> = if (method.parameterTypes.size == args.size + 1) {
-            arrayOf(*args, DEVICE_ID_DEFAULT)
+            // Android 17 inserts deviceId BEFORE userId, not after it.
+            arrayOf(*args.dropLast(1).toTypedArray(), DEVICE_ID_DEFAULT, args.last())
         } else {
             args
         }

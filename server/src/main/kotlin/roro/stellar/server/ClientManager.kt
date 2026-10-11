@@ -13,6 +13,9 @@ open class ClientManager(
 ) {
     private val clientsByKey = ConcurrentHashMap<Long, ClientRecord>()
     private val clientsByUid = ConcurrentHashMap<Int, MutableSet<ClientRecord>>()
+    // The two indexes must be updated atomically; concurrent Binder death callbacks
+    // must not remove a newer registration that reused the same uid/pid.
+    private val clientsLock = Any()
 
     private fun makeKey(uid: Int, pid: Int): Long = (uid.toLong() shl 32) or (pid.toLong() and 0xFFFFFFFFL)
 
@@ -23,29 +26,44 @@ open class ClientManager(
     fun findClient(uid: Int, pid: Int): ClientRecord? = clientsByKey[makeKey(uid, pid)]
 
     private fun addToMaps(record: ClientRecord) {
-        clientsByKey[makeKey(record.uid, record.pid)] = record
-        clientsByUid.getOrPut(record.uid) { ConcurrentHashMap.newKeySet() }.add(record)
+        synchronized(clientsLock) {
+            val previous = clientsByKey.put(makeKey(record.uid, record.pid), record)
+            if (previous != null) {
+                clientsByUid[previous.uid]?.let { records ->
+                    records.remove(previous)
+                    if (records.isEmpty()) clientsByUid.remove(previous.uid, records)
+                }
+            }
+            clientsByUid.computeIfAbsent(record.uid) { ConcurrentHashMap.newKeySet() }.add(record)
+        }
     }
 
     private fun removeFromMaps(record: ClientRecord) {
-        clientsByKey.remove(makeKey(record.uid, record.pid))
-        clientsByUid[record.uid]?.remove(record)
+        synchronized(clientsLock) {
+            // A stale death recipient must never evict a replacement client.
+            if (!clientsByKey.remove(makeKey(record.uid, record.pid), record)) return
+            clientsByUid[record.uid]?.let { records ->
+                records.remove(record)
+                if (records.isEmpty()) clientsByUid.remove(record.uid, records)
+            }
+        }
     }
 
     fun getOrCreateClient(uid: Int, pid: Int, packageName: String, apiVersion: Int = 0): ClientRecord {
-        findClient(uid, pid)?.let { return it }
+        synchronized(clientsLock) {
+            findClient(uid, pid)?.let { return it }
 
-        val record = ClientRecord(uid, pid, null, packageName, apiVersion)
-
-        configManager.find(uid)?.let { entry ->
-            for (permission in entry.permissions) {
-                record.allowedMap[permission.key] = permission.value == ConfigManager.FLAG_GRANTED
+            val record = ClientRecord(uid, pid, null, packageName, apiVersion)
+            configManager.find(uid)?.let { entry ->
+                for (permission in entry.permissions) {
+                    record.allowedMap[permission.key] = permission.value == ConfigManager.FLAG_GRANTED
+                }
             }
-        }
 
-        addToMaps(record)
-        LOGGER.i("创建 Shizuku 客户端记录: uid=%d, pid=%d, package=%s", uid, pid, packageName)
-        return record
+            addToMaps(record)
+            LOGGER.i("创建 Shizuku 客户端记录: uid=%d, pid=%d, package=%s", uid, pid, packageName)
+            return record
+        }
     }
 
     fun attachShizukuApplication(uid: Int, pid: Int, application: IShizukuApplication, packageName: String, apiVersion: Int = 0): ClientRecord {
@@ -53,11 +71,14 @@ open class ClientManager(
         record.shizukuApplication = application
 
         try {
-            application.asBinder().linkToDeath({
+            val binder = application.asBinder()
+            binder.linkToDeath({
                 LOGGER.i("Shizuku 客户端死亡: uid=%d, pid=%d", uid, pid)
-                record.shizukuApplication = null
-                if (record.client == null) {
-                    removeFromMaps(record)
+                if (record.shizukuApplication?.asBinder() == binder) {
+                    record.shizukuApplication = null
+                    if (record.client == null) {
+                        removeFromMaps(record)
+                    }
                 }
             }, 0)
         } catch (e: RemoteException) {
@@ -131,7 +152,11 @@ open class ClientManager(
             return null
         }
 
-        addToMaps(clientRecord)
+        // Preserve an already attached Shizuku facade for this process.
+        synchronized(clientsLock) {
+            clientRecord.shizukuApplication = findClient(uid, pid)?.shizukuApplication
+            addToMaps(clientRecord)
+        }
         LOGGER.i("客户端记录已添加: uid=%d, pid=%d, 当前客户端总数=%d", uid, pid, clientsByKey.size)
         return clientRecord
     }

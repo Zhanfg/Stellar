@@ -2,62 +2,78 @@ package roro.stellar.manager.startup.boot
 
 import com.topjohnwu.superuser.Shell
 
+/** Opt-in Magisk/KernelSU/APatch service.d integration (no polling daemon). */
 object BootScriptManager {
     const val SCRIPT_PATH = "/data/adb/service.d/stellar.sh"
+    private const val TEMP_PATH = "/data/adb/service.d/.stellar.sh.tmp"
+    private val scriptContent = """
+        #!/system/bin/sh
+        # Resolve current APK and native library on every boot, including after updates.
+        PATH=/system/bin:/system/xbin:/sbin:/data/adb/magisk:/data/adb/ksu/bin:${'$'}PATH
+        export PATH
+        attempt=0
+        while [ "${'$'}(getprop sys.boot_completed)" != "1" ] && [ "${'$'}attempt" -lt 60 ]; do
+          sleep 3
+          attempt=${'$'}((attempt + 1))
+        done
+        [ "${'$'}(getprop sys.boot_completed)" = "1" ] || exit 0
+        [ "${'$'}(id -u)" = "0" ] || exit 1
+        pidof stellar_server >/dev/null 2>&1 && exit 0
+        attempt=0
+        apk=
+        while [ "${'$'}attempt" -lt 10 ]; do
+          apk="${'$'}(pm path roro.stellar.manager 2>/dev/null | sed -n 's/^package://p' | grep '/base.apk${'$'}' | head -n 1)"
+          [ -r "${'$'}apk" ] && break
+          apk=
+          attempt=${'$'}((attempt + 1))
+          sleep 3
+        done
+        [ -n "${'$'}apk" ] && [ -r "${'$'}apk" ] || exit 1
+        appdir="${'$'}{apk%/base.apk}"
+        for native in "${'$'}appdir"/lib/*/libstellar.so; do
+          [ -f "${'$'}native" ] && [ -x "${'$'}native" ] || continue
+          "${'$'}native" "--apk=${'$'}apk" >/dev/null 2>&1
+          exit ${'$'}?
+        done
+        exit 1
+    """.trimIndent().trimEnd() + "\n"
 
-    private const val INSTALL_SCRIPT_COMMAND =
-        "printf '#!/system/bin/sh\\nwhile [ \"${'$'}(getprop sys.boot_completed)\" != \"1\" ]; do sleep 3; done\\nS=${'$'}(ls ${'$'}(pm path roro.stellar.manager | cut -d: -f2 | sed \"s/base.apk//\")lib/*/libstellar.so | head -n 1); [ -n \"${'$'}S\" ] && \"${'$'}S\"' > /data/adb/service.d/stellar.sh && chmod 755 /data/adb/service.d/stellar.sh"
+    data class Result(val success: Boolean, val message: String)
 
-    private const val REMOVE_SCRIPT_COMMAND = "rm -f $SCRIPT_PATH"
-
-    data class Result(
-        val success: Boolean,
-        val message: String
-    )
-
-    fun hasRootPermission(): Boolean {
-        return try {
-            Shell.getShell().isRoot
-        } catch (_: Exception) {
-            false
-        }
-    }
+    fun hasRootPermission(): Boolean =
+        runCatching { Shell.getShell().isRoot }.getOrDefault(false)
 
     fun isScriptInstalled(): Boolean {
         if (!hasRootPermission()) return false
-        return try {
-            val result = Shell.cmd("[ -x \"$SCRIPT_PATH\" ]").exec()
-            result.code == 0
-        } catch (_: Exception) {
-            false
-        }
+        return runCatching {
+            Shell.cmd("[ -x '$SCRIPT_PATH' ]").exec().code == 0
+        }.getOrDefault(false)
     }
 
     fun installScript(): Result {
-        if (!hasRootPermission()) {
-            return Result(success = false, message = "No root permission")
-        }
-        return exec(INSTALL_SCRIPT_COMMAND)
+        if (!hasRootPermission()) return Result(false, "No root permission")
+        // Fixed delimiter; content is application-owned, never user-controlled.
+        val command = """
+            umask 077
+            mkdir -p /data/adb/service.d || exit 1
+            cat > '$TEMP_PATH' <<'STELLAR_SERVICE_SCRIPT_END'
+${scriptContent.trimEnd()}
+STELLAR_SERVICE_SCRIPT_END
+            chmod 0700 '$TEMP_PATH' &&
+            mv -f '$TEMP_PATH' '$SCRIPT_PATH'
+        """.trimIndent()
+        return exec(command)
     }
 
-    fun removeScript(): Result {
-        if (!hasRootPermission()) {
-            return Result(success = false, message = "No root permission")
-        }
-        return exec(REMOVE_SCRIPT_COMMAND)
-    }
+    fun removeScript(): Result =
+        if (hasRootPermission()) exec("rm -f '$SCRIPT_PATH' '$TEMP_PATH'")
+        else Result(false, "No root permission")
 
-    private fun exec(command: String): Result {
-        return try {
-            val result = Shell.cmd(command).exec()
-            if (result.code == 0) {
-                Result(success = true, message = "")
-            } else {
-                val error = result.err.joinToString("\n").ifEmpty { "exit code: ${result.code}" }
-                Result(success = false, message = error)
-            }
-        } catch (e: Exception) {
-            Result(success = false, message = e.message ?: "Unknown error")
-        }
+    private fun exec(command: String): Result = try {
+        val result = Shell.cmd(command).exec()
+        if (result.code == 0) Result(true, "")
+        else Result(false, result.err.joinToString("\n").ifBlank { "exit code: ${result.code}" })
+    } catch (e: Exception) {
+        Result(false, e.message ?: "Unknown error")
     }
 }

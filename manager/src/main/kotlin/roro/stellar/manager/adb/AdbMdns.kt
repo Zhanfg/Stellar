@@ -11,10 +11,12 @@ import androidx.annotation.RequiresApi
 import androidx.lifecycle.Observer
 import roro.stellar.manager.compat.LocalNetwork
 import java.io.IOException
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
-import java.net.ServerSocket
+import java.net.Socket
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 @RequiresApi(Build.VERSION_CODES.R)
 class AdbMdns(
@@ -43,6 +45,8 @@ class AdbMdns(
     private var serviceFound = false
     @Volatile
     private var resolving = false
+    @Volatile
+    private var discoveryGeneration = 0L
     private var serviceName: String? = null
     private var listener: DiscoveryListener? = null
     private val nsdManager: NsdManager = context.getSystemService(NsdManager::class.java)
@@ -94,6 +98,7 @@ class AdbMdns(
             return
         }
 
+        discoveryGeneration++
         running = true
         startFailedRetryCount = 0
         refreshCount = 0
@@ -140,6 +145,7 @@ class AdbMdns(
     fun stop() {
         if (!running) return
         running = false
+        discoveryGeneration++
         mainHandler.removeCallbacks(refreshRunnable)
         if (registered) {
             try {
@@ -151,6 +157,9 @@ class AdbMdns(
         listener = null
         registered = false
         pendingRestart = false
+        resolving = false
+        serviceFound = false
+        serviceName = null
     }
 
     fun destroy() {
@@ -176,61 +185,88 @@ class AdbMdns(
 
     @Suppress("DEPRECATION")
     private fun onServiceFound(info: NsdServiceInfo) {
+        if (!running || serviceFound || resolving) return
         resolving = true
-        nsdManager.resolveService(info, ResolveListener(this))
+        try {
+            nsdManager.resolveService(info, ResolveListener(this))
+        } catch (e: Exception) {
+            resolving = false
+            Log.w(TAG, "无法解析发现的服务", e)
+        }
     }
 
     private fun onServiceLost(info: NsdServiceInfo) {
-        if (info.serviceName == serviceName) observer.onChanged(-1)
+        if (running && serviceFound && info.serviceName == serviceName) {
+            serviceFound = false
+            serviceName = null
+            refreshCount = 0
+            observer.onChanged(-1)
+            mainHandler.removeCallbacks(refreshRunnable)
+            mainHandler.postDelayed(refreshRunnable, CHECK_INTERVAL_MILLIS)
+        }
     }
 
     @Suppress("DEPRECATION")
     private fun onServiceResolved(resolvedService: NsdServiceInfo) {
         if (!running) return
-        
-        executor.execute {
-            try {
-                val isLocalService = NetworkInterface.getNetworkInterfaces()
-                    .asSequence()
-                    .any { networkInterface ->
-                        networkInterface.inetAddresses
-                            .asSequence()
-                            .any { resolvedService.host.hostAddress == it.hostAddress }
+
+        val generation = discoveryGeneration
+        try {
+            executor.execute {
+                try {
+                    val host = resolvedService.host ?: return@execute
+                    // Only accept a service advertised by an interface on this device.
+                    val isLocalService = NetworkInterface.getNetworkInterfaces()
+                        ?.asSequence()
+                        ?.any { networkInterface ->
+                            networkInterface.inetAddresses.asSequence().any { host == it }
+                        } == true
+
+                    if (!isLocalService || !running || generation != discoveryGeneration) {
+                        return@execute
                     }
 
-                Log.v(TAG, "isLocalService=$isLocalService, running=$running")
+                    // Probe the advertised local interface. Some ADB daemons do not
+                    // listen on loopback, and merely binding the port is unreliable.
+                    val reachable = isPortAvailable(host, resolvedService.port)
+                    Log.v(TAG, "local=$isLocalService, reachable=$reachable, port=${resolvedService.port}")
 
-                if (!isLocalService || !running) {
-                    return@execute
-                }
-
-                val portAvailable = isPortAvailable(resolvedService.port)
-                Log.v(TAG, "portAvailable=$portAvailable, port=${resolvedService.port}")
-
-                if (portAvailable && running) {
-                    mainHandler.post {
-                        if (running && !serviceFound) {
-                            serviceFound = true
-                            mainHandler.removeCallbacks(refreshRunnable)
-                            serviceName = resolvedService.serviceName
-                            Log.i(TAG, "已发现服务，停止刷新")
-                            observer.onChanged(resolvedService.port)
+                    if (reachable) {
+                        mainHandler.post {
+                            if (running && generation == discoveryGeneration && !serviceFound) {
+                                serviceFound = true
+                                mainHandler.removeCallbacks(refreshRunnable)
+                                serviceName = resolvedService.serviceName
+                                Log.i(TAG, "已发现本机 ADB 服务")
+                                observer.onChanged(resolvedService.port)
+                            }
                         }
                     }
+                } catch (e: Exception) {
+                    Log.e(TAG, "服务验证失败", e)
+                } finally {
+                    mainHandler.post {
+                        if (generation == discoveryGeneration) resolving = false
+                    }
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "服务验证失败", e)
             }
+        } catch (_: RejectedExecutionException) {
+            resolving = false
         }
     }
 
-    private fun isPortAvailable(port: Int) = try {
-        ServerSocket().use {
-            it.bind(InetSocketAddress("127.0.0.1", port), 1)
+    private fun isPortAvailable(host: InetAddress, port: Int): Boolean {
+        if (port !in 1..65535) return false
+        return try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(host, port), PORT_CONNECT_TIMEOUT_MILLIS)
+                true
+            }
+        } catch (_: IOException) {
+            false
+        } catch (_: SecurityException) {
             false
         }
-    } catch (_: IOException) {
-        true
     }
 
     internal class DiscoveryListener(private val adbMdns: AdbMdns) : NsdManager.DiscoveryListener {
@@ -283,7 +319,6 @@ class AdbMdns(
 
         override fun onServiceResolved(nsdServiceInfo: NsdServiceInfo) {
             Log.v(TAG, "解析服务成功: ${nsdServiceInfo.serviceName}, host=${nsdServiceInfo.host}, port=${nsdServiceInfo.port}")
-            adbMdns.resolving = false
             adbMdns.onServiceResolved(nsdServiceInfo)
         }
 
@@ -293,12 +328,14 @@ class AdbMdns(
         const val TLS_CONNECT = "_adb-tls-connect._tcp"
         const val TLS_PAIRING = "_adb-tls-pairing._tcp"
         const val TAG = "AdbMdns"
-        const val CHECK_INTERVAL_MILLIS = 500L
+        // Avoid recycling the NSD discovery session every 500 ms (power + mDNS churn).
+        const val CHECK_INTERVAL_MILLIS = 5000L
         const val INITIAL_DELAY_MILLIS = 2000L
         const val RESTART_DELAY_MILLIS = 100L
-        const val RETRY_DELAY_MILLIS = 100L
-        const val MAX_START_RETRY = 10
-        const val MAX_REFRESH_COUNT = 100
+        const val RETRY_DELAY_MILLIS = 1500L
+        const val MAX_START_RETRY = 5
+        const val MAX_REFRESH_COUNT = 12
+        const val PORT_CONNECT_TIMEOUT_MILLIS = 350
     }
 }
 
