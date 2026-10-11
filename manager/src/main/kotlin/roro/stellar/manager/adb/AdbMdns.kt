@@ -11,6 +11,7 @@ import androidx.annotation.RequiresApi
 import androidx.lifecycle.Observer
 import roro.stellar.manager.compat.LocalNetwork
 import java.io.IOException
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.Socket
@@ -225,9 +226,9 @@ class AdbMdns(
                         return@execute
                     }
 
-                    // An occupied port is not proof that ADB is accepting connections.
-                    // Connect to loopback instead of attempting to bind the port.
-                    val reachable = isPortAvailable(resolvedService.port)
+                    // Probe the advertised local interface. Some ADB daemons do not
+                    // listen on loopback, and merely binding the port is unreliable.
+                    val reachable = isPortAvailable(host, resolvedService.port)
                     Log.v(TAG, "local=$isLocalService, reachable=$reachable, port=${resolvedService.port}")
 
                     if (reachable) {
@@ -254,11 +255,11 @@ class AdbMdns(
         }
     }
 
-    private fun isPortAvailable(port: Int): Boolean {
+    private fun isPortAvailable(host: InetAddress, port: Int): Boolean {
         if (port !in 1..65535) return false
         return try {
             Socket().use { socket ->
-                socket.connect(InetSocketAddress("127.0.0.1", port), PORT_CONNECT_TIMEOUT_MILLIS)
+                socket.connect(InetSocketAddress(host, port), PORT_CONNECT_TIMEOUT_MILLIS)
                 true
             }
         } catch (_: IOException) {
