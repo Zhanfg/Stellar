@@ -96,8 +96,17 @@ v_current = (uintptr_t) v + v_size - sizeof(char *); \
 #define ARG_PUSH_DEBUG_ONLY(v, arg)
 #endif
 
+    // dirname() may mutate its argument. dex_path points to std::string::c_str(),
+    // and changing it can corrupt the APK path passed to app_process.
+    std::string apk_dir(dex_path);
+    const auto final_slash = apk_dir.find_last_of('/');
+    if (final_slash == std::string::npos) {
+        LOGE("Invalid APK path");
+        exit(EXIT_FATAL_PM_PATH);
+    }
+    apk_dir.resize(final_slash);
     char lib_path[PATH_MAX]{0};
-    snprintf(lib_path, PATH_MAX, "%s/lib/%s", dirname(dex_path), ABI);
+    snprintf(lib_path, PATH_MAX, "%s/lib/%s", apk_dir.c_str(), ABI);
 
     ARG(argv)
     ARG_PUSH(argv, "/system/bin/app_process")
@@ -229,6 +238,41 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // Validate the replacement executable/classpath before touching a running server.
+    if (access(apk_path.c_str(), R_OK) != 0) {
+        if (apk_path.empty()) {
+            auto f = popen("pm path " PACKAGE_NAME, "r");
+            if (f) {
+                char line[PATH_MAX]{0};
+                fgets(line, PATH_MAX, f);
+                trim(line);
+                if (strstr(line, "package:") == line) {
+                    apk_path = line + strlen("package:");
+                }
+                pclose(f);
+            }
+        }
+
+        if (apk_path.empty() && argc > 0) {
+            std::string so_path(argv[0]);
+            size_t lib_pos = so_path.find("/lib/");
+            if (lib_pos != std::string::npos) {
+                apk_path = so_path.substr(0, lib_pos) + "/base.apk";
+            }
+        }
+
+        if (apk_path.empty()) {
+            perrorf("错误：无法获取应用路径\n");
+            exit(EXIT_FATAL_PM_PATH);
+        }
+
+        if (access(apk_path.c_str(), R_OK) != 0) {
+            perrorf("错误：无法访问应用文件\n");
+            exit(EXIT_FATAL_PM_PATH);
+        }
+    }
+
+
     printf("检查现有服务\n");
     fflush(stdout);
 
@@ -265,38 +309,6 @@ int main(int argc, char *argv[]) {
         fflush(stdout);
     }
 
-    if (access(apk_path.c_str(), R_OK) != 0) {
-        if (apk_path.empty()) {
-            auto f = popen("pm path " PACKAGE_NAME, "r");
-            if (f) {
-                char line[PATH_MAX]{0};
-                fgets(line, PATH_MAX, f);
-                trim(line);
-                if (strstr(line, "package:") == line) {
-                    apk_path = line + strlen("package:");
-                }
-                pclose(f);
-            }
-        }
-
-        if (apk_path.empty() && argc > 0) {
-            std::string so_path(argv[0]);
-            size_t lib_pos = so_path.find("/lib/");
-            if (lib_pos != std::string::npos) {
-                apk_path = so_path.substr(0, lib_pos) + "/base.apk";
-            }
-        }
-
-        if (apk_path.empty()) {
-            perrorf("错误：无法获取应用路径\n");
-            exit(EXIT_FATAL_PM_PATH);
-        }
-
-        if (access(apk_path.c_str(), R_OK) != 0) {
-            perrorf("错误：无法访问应用文件\n");
-            exit(EXIT_FATAL_PM_PATH);
-        }
-    }
 
     printf("启动服务进程\n");
     fflush(stdout);
