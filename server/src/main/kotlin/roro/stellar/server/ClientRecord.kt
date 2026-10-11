@@ -6,6 +6,7 @@ import moe.shizuku.server.IShizukuApplication
 import roro.stellar.StellarApiConstants
 import roro.stellar.server.shizuku.ShizukuApiConstants
 import roro.stellar.server.util.Logger
+import java.util.concurrent.ConcurrentHashMap
 
 open class ClientRecord(
     val uid: Int,
@@ -15,13 +16,14 @@ open class ClientRecord(
     val apiVersion: Int
 ) {
     val attachTime: Long = System.currentTimeMillis()
+    @Volatile
     var shizukuApplication: IShizukuApplication? = null
 
-    val lastDenyTimeMap: MutableMap<String, Long> = mutableMapOf()
+    val lastDenyTimeMap: MutableMap<String, Long> = ConcurrentHashMap()
 
-    val allowedMap: MutableMap<String, Boolean> = mutableMapOf()
+    val allowedMap: MutableMap<String, Boolean> = ConcurrentHashMap()
 
-    val onetimeMap: MutableMap<String, Boolean> = mutableMapOf()
+    val onetimeMap: MutableMap<String, Boolean> = ConcurrentHashMap()
 
     fun dispatchRequestPermissionResult(
         requestCode: Int,
