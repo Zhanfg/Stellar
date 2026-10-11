@@ -30,7 +30,7 @@ object PermissionManagerCompat {
     }
 
     private fun method(name: String, uidVariant: Boolean = false): Method {
-        val cacheKey = if (uidVariant) "$"+"name#uid" else "$"+"name#package"
+        val cacheKey = if (uidVariant) "${name}#uid" else "${name}#package"
         return methodCache.computeIfAbsent(cacheKey) {
             val methods = service.javaClass.methods.filter { candidate ->
                 val p = candidate.parameterTypes
@@ -47,7 +47,7 @@ object PermissionManagerCompat {
             }
             // Android 17 introduces deviceId, sometimes also an attribution reason.
             methods.maxByOrNull { it.parameterTypes.size }
-                ?: throw NoSuchMethodException("No compatible IPermissionManager.$"+"name")
+                ?: throw NoSuchMethodException("No compatible IPermissionManager.$name")
         }
     }
 
