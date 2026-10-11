@@ -9,264 +9,31 @@ object BootScriptManager {
     private val scriptContent = """
         #!/system/bin/sh
         # Resolve current APK and native library on every boot, including after updates.
-        PATH=/system/bin:/system/xbin:/sbin:/data/adb/magisk:/data/adb/ksu/bin:${'PATH
+        PATH=/system/bin:/system/xbin:/sbin:/data/adb/magisk:/data/adb/ksu/bin:${'$'}PATH
         export PATH
         attempt=0
-        while [ "$(getprop sys.boot_completed)" != "1" ] && [ "$attempt" -lt 60 ]; do
+        while [ "${'$'}(getprop sys.boot_completed)" != "1" ] && [ "${'$'}attempt" -lt 60 ]; do
           sleep 3
-          attempt=$((attempt + 1))
+          attempt=${'$'}((attempt + 1))
         done
-        [ "$(getprop sys.boot_completed)" = "1" ] || exit 0
-        [ "$(id -u)" = "0" ] || exit 1
+        [ "${'$'}(getprop sys.boot_completed)" = "1" ] || exit 0
+        [ "${'$'}(id -u)" = "0" ] || exit 1
         pidof stellar_server >/dev/null 2>&1 && exit 0
         attempt=0
         apk=
-        while [ "$attempt" -lt 10 ]; do
-          apk="$(pm path roro.stellar.manager 2>/dev/null | sed -n 's/^package://p' | grep '/base.apk$' | head -n 1)"
-          [ -r "$apk" ] && break
+        while [ "${'$'}attempt" -lt 10 ]; do
+          apk="${'$'}(pm path roro.stellar.manager 2>/dev/null | sed -n 's/^package://p' | grep '/base.apk${'$'}' | head -n 1)"
+          [ -r "${'$'}apk" ] && break
           apk=
-          attempt=$((attempt + 1))
+          attempt=${'$'}((attempt + 1))
           sleep 3
         done
-        [ -n "$apk" ] && [ -r "$apk" ] || exit 1
-        appdir="${apk%/base.apk}"
-        for native in "$appdir"/lib/*/libstellar.so; do
-          [ -f "$native" ] && [ -x "$native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}PATH
-        export PATH
-        attempt=0
-        while [ "${'(getprop sys.boot_completed)" != "1" ] && [ "$attempt" -lt 60 ]; do
-          sleep 3
-          attempt=$((attempt + 1))
-        done
-        [ "$(getprop sys.boot_completed)" = "1" ] || exit 0
-        [ "$(id -u)" = "0" ] || exit 1
-        pidof stellar_server >/dev/null 2>&1 && exit 0
-        attempt=0
-        apk=
-        while [ "$attempt" -lt 10 ]; do
-          apk="$(pm path roro.stellar.manager 2>/dev/null | sed -n 's/^package://p' | grep '/base.apk$' | head -n 1)"
-          [ -r "$apk" ] && break
-          apk=
-          attempt=$((attempt + 1))
-          sleep 3
-        done
-        [ -n "$apk" ] && [ -r "$apk" ] || exit 1
-        appdir="${apk%/base.apk}"
-        for native in "$appdir"/lib/*/libstellar.so; do
-          [ -f "$native" ] && [ -x "$native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}(getprop sys.boot_completed)" != "1" ] && [ "${'attempt" -lt 60 ]; do
-          sleep 3
-          attempt=$((attempt + 1))
-        done
-        [ "$(getprop sys.boot_completed)" = "1" ] || exit 0
-        [ "$(id -u)" = "0" ] || exit 1
-        pidof stellar_server >/dev/null 2>&1 && exit 0
-        attempt=0
-        apk=
-        while [ "$attempt" -lt 10 ]; do
-          apk="$(pm path roro.stellar.manager 2>/dev/null | sed -n 's/^package://p' | grep '/base.apk$' | head -n 1)"
-          [ -r "$apk" ] && break
-          apk=
-          attempt=$((attempt + 1))
-          sleep 3
-        done
-        [ -n "$apk" ] && [ -r "$apk" ] || exit 1
-        appdir="${apk%/base.apk}"
-        for native in "$appdir"/lib/*/libstellar.so; do
-          [ -f "$native" ] && [ -x "$native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}attempt" -lt 60 ]; do
-          sleep 3
-          attempt=${'((attempt + 1))
-        done
-        [ "$(getprop sys.boot_completed)" = "1" ] || exit 0
-        [ "$(id -u)" = "0" ] || exit 1
-        pidof stellar_server >/dev/null 2>&1 && exit 0
-        attempt=0
-        apk=
-        while [ "$attempt" -lt 10 ]; do
-          apk="$(pm path roro.stellar.manager 2>/dev/null | sed -n 's/^package://p' | grep '/base.apk$' | head -n 1)"
-          [ -r "$apk" ] && break
-          apk=
-          attempt=$((attempt + 1))
-          sleep 3
-        done
-        [ -n "$apk" ] && [ -r "$apk" ] || exit 1
-        appdir="${apk%/base.apk}"
-        for native in "$appdir"/lib/*/libstellar.so; do
-          [ -f "$native" ] && [ -x "$native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}((attempt + 1))
-        done
-        [ "${'(getprop sys.boot_completed)" = "1" ] || exit 0
-        [ "$(id -u)" = "0" ] || exit 1
-        pidof stellar_server >/dev/null 2>&1 && exit 0
-        attempt=0
-        apk=
-        while [ "$attempt" -lt 10 ]; do
-          apk="$(pm path roro.stellar.manager 2>/dev/null | sed -n 's/^package://p' | grep '/base.apk$' | head -n 1)"
-          [ -r "$apk" ] && break
-          apk=
-          attempt=$((attempt + 1))
-          sleep 3
-        done
-        [ -n "$apk" ] && [ -r "$apk" ] || exit 1
-        appdir="${apk%/base.apk}"
-        for native in "$appdir"/lib/*/libstellar.so; do
-          [ -f "$native" ] && [ -x "$native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}(getprop sys.boot_completed)" = "1" ] || exit 0
-        [ "${'(id -u)" = "0" ] || exit 1
-        pidof stellar_server >/dev/null 2>&1 && exit 0
-        attempt=0
-        apk=
-        while [ "$attempt" -lt 10 ]; do
-          apk="$(pm path roro.stellar.manager 2>/dev/null | sed -n 's/^package://p' | grep '/base.apk$' | head -n 1)"
-          [ -r "$apk" ] && break
-          apk=
-          attempt=$((attempt + 1))
-          sleep 3
-        done
-        [ -n "$apk" ] && [ -r "$apk" ] || exit 1
-        appdir="${apk%/base.apk}"
-        for native in "$appdir"/lib/*/libstellar.so; do
-          [ -f "$native" ] && [ -x "$native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}(id -u)" = "0" ] || exit 1
-        pidof stellar_server >/dev/null 2>&1 && exit 0
-        attempt=0
-        apk=
-        while [ "${'attempt" -lt 10 ]; do
-          apk="$(pm path roro.stellar.manager 2>/dev/null | sed -n 's/^package://p' | grep '/base.apk$' | head -n 1)"
-          [ -r "$apk" ] && break
-          apk=
-          attempt=$((attempt + 1))
-          sleep 3
-        done
-        [ -n "$apk" ] && [ -r "$apk" ] || exit 1
-        appdir="${apk%/base.apk}"
-        for native in "$appdir"/lib/*/libstellar.so; do
-          [ -f "$native" ] && [ -x "$native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}attempt" -lt 10 ]; do
-          apk="${'(pm path roro.stellar.manager 2>/dev/null | sed -n 's/^package://p' | grep '/base.apk$' | head -n 1)"
-          [ -r "$apk" ] && break
-          apk=
-          attempt=$((attempt + 1))
-          sleep 3
-        done
-        [ -n "$apk" ] && [ -r "$apk" ] || exit 1
-        appdir="${apk%/base.apk}"
-        for native in "$appdir"/lib/*/libstellar.so; do
-          [ -f "$native" ] && [ -x "$native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}(pm path roro.stellar.manager 2>/dev/null | sed -n 's/^package://p' | grep '/base.apk${'' | head -n 1)"
-          [ -r "$apk" ] && break
-          apk=
-          attempt=$((attempt + 1))
-          sleep 3
-        done
-        [ -n "$apk" ] && [ -r "$apk" ] || exit 1
-        appdir="${apk%/base.apk}"
-        for native in "$appdir"/lib/*/libstellar.so; do
-          [ -f "$native" ] && [ -x "$native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}' | head -n 1)"
-          [ -r "${'apk" ] && break
-          apk=
-          attempt=$((attempt + 1))
-          sleep 3
-        done
-        [ -n "$apk" ] && [ -r "$apk" ] || exit 1
-        appdir="${apk%/base.apk}"
-        for native in "$appdir"/lib/*/libstellar.so; do
-          [ -f "$native" ] && [ -x "$native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}apk" ] && break
-          apk=
-          attempt=${'((attempt + 1))
-          sleep 3
-        done
-        [ -n "$apk" ] && [ -r "$apk" ] || exit 1
-        appdir="${apk%/base.apk}"
-        for native in "$appdir"/lib/*/libstellar.so; do
-          [ -f "$native" ] && [ -x "$native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}((attempt + 1))
-          sleep 3
-        done
-        [ -n "${'apk" ] && [ -r "$apk" ] || exit 1
-        appdir="${apk%/base.apk}"
-        for native in "$appdir"/lib/*/libstellar.so; do
-          [ -f "$native" ] && [ -x "$native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}apk" ] && [ -r "${'apk" ] || exit 1
-        appdir="${apk%/base.apk}"
-        for native in "$appdir"/lib/*/libstellar.so; do
-          [ -f "$native" ] && [ -x "$native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}apk" ] || exit 1
-        appdir="${'{apk%/base.apk}"
-        for native in "$appdir"/lib/*/libstellar.so; do
-          [ -f "$native" ] && [ -x "$native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}{apk%/base.apk}"
-        for native in "${'appdir"/lib/*/libstellar.so; do
-          [ -f "$native" ] && [ -x "$native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}appdir"/lib/*/libstellar.so; do
-          [ -f "${'native" ] && [ -x "$native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}native" ] && [ -x "${'native" ] || continue
-          "$native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}native" ] || continue
-          "${'native" "--apk=$apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}native" "--apk=${'apk" >/dev/null 2>&1
-          exit $?
-        done
-        exit 1}apk" >/dev/null 2>&1
-          exit ${'?
-        done
-        exit 1}?
+        [ -n "${'$'}apk" ] && [ -r "${'$'}apk" ] || exit 1
+        appdir="${'$'}{apk%/base.apk}"
+        for native in "${'$'}appdir"/lib/*/libstellar.so; do
+          [ -f "${'$'}native" ] && [ -x "${'$'}native" ] || continue
+          "${'$'}native" "--apk=${'$'}apk" >/dev/null 2>&1
+          exit ${'$'}?
         done
         exit 1
     """.trimIndent().trimEnd() + "\n"
